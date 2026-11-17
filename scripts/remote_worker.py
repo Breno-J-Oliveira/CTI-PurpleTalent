@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import sqlite3
 import sys
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -17,6 +18,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import orchestrator
+from scripts import remote_relay as relay
 
 MAX_RESPONSE = 32768
 LEASE = re.compile(r'[A-Za-z0-9_-]{32,256}\Z')
@@ -75,11 +77,12 @@ class SiteClient:
 
 
 class Worker:
-    def __init__(self, client, journal):
+    def __init__(self, client, journal, backend=None):
         path = Path(journal)
         if not path.is_absolute() or path.is_symlink() or not path.parent.is_dir():
             raise ValueError('Use caminho absoluto para o journal em uma pasta privada existente.')
         self.client = client
+        self.backend = backend if backend is not None else orchestrator
         lock_path = path.with_name(path.name + '.lock')
         if lock_path.is_symlink():
             raise ValueError('Caminho de reserva inválido.')
@@ -113,7 +116,7 @@ class Worker:
         # novamente; encerre a VM e registre falha antes de aceitar outro job.
         rows = self.db.execute("SELECT id,instance FROM jobs WHERE state='running'").fetchall()
         for identifier, instance in rows:
-            orchestrator.stop(instance)
+            self.backend.stop(instance)
             with self.db:
                 self.db.execute("UPDATE jobs SET state='failed' WHERE id=?", (identifier,))
 
@@ -144,20 +147,20 @@ class Worker:
                             (job['id'], job['lease'], job['action'], job['instance']))
         try:
             if job['action'] == 'start':
-                port = orchestrator.start(job['instance'], job['scenario'], 5000, job['flag'])
+                port = self.backend.start(job['instance'], job['scenario'], 5000, job['flag'])
                 if type(port) is not int or not 1 <= port <= 65535:
                     raise orchestrator.LabError('Porta inválida.')
             else:
-                orchestrator.stop(job['instance'])
+                self.backend.stop(job['instance'])
                 port = None
             with self.db:
                 self.db.execute("UPDATE jobs SET state='completed',port=? WHERE id=?", (port, job['id']))
                 if job['action'] == 'stop':
                     self.db.execute("UPDATE jobs SET port=NULL WHERE instance=? AND action='start'", (job['instance'],))
-        except (orchestrator.LabError, OSError, sqlite3.Error):
+        except (orchestrator.LabError, OSError, sqlite3.Error, subprocess.SubprocessError):
             # A falha de registro após iniciar também exige desligar a VM.
             if job['action'] == 'start':
-                orchestrator.stop(job['instance'])
+                self.backend.stop(job['instance'])
             with self.db:
                 self.db.execute("UPDATE jobs SET state='failed',port=NULL WHERE id=?", (job['id'],))
         self.flush()
@@ -165,17 +168,26 @@ class Worker:
 
 def main():
     client = SiteClient(os.environ.get('LAB_WORKER_SITE', ''), os.environ.get('LAB_WORKER_TOKEN', ''))
-    worker = Worker(client, os.environ.get('LAB_WORKER_JOURNAL', ''))
+    from scripts.qemu_incident import QemuIncident
+    backend = QemuIncident(os.environ['LAB_QEMU_RUNTIME'], os.environ['LAB_QEMU_WHEELS'])
+    worker = Worker(client, os.environ.get('LAB_WORKER_JOURNAL', ''), backend)
+    if worker.db.execute("SELECT 1 FROM jobs WHERE state='running' OR port IS NOT NULL LIMIT 1").fetchone():
+        worker.close()
+        raise SystemExit('Verifique a VM e reconcilie o journal antes de reiniciar o executor.')
     try:
         while True:
             try:
                 worker.run_once()
+                relay.serve_once(client, worker.db, backend.status)
             except (OSError, ValueError, sqlite3.Error, urllib.error.URLError, orchestrator.LabError):
                 # Nunca imprimir conteúdo de respostas, credenciais ou flags.
                 print('Executor aguardando conexão ou intervenção do operador.', flush=True)
             time.sleep(5)
     finally:
-        worker.close()
+        try:
+            backend.stop(backend.instance)
+        finally:
+            worker.close()
 
 
 if __name__ == '__main__':

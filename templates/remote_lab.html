@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Laboratório de investigação{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('challenge', cid=challenge_id) }}">Voltar ao desafio</a>
+<section class="card" data-incident-console data-request="{{ url_for('remote_relay_create', instance_id=instance_id) }}">
+  <h1>Laboratório de investigação</h1>
+  <p>Consulte os registros e volte ao desafio para enviar sua resposta.</p>
+  <form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="incident-section">Seção</label>
+    <select id="incident-section" name="path">
+      <option value="/">Visão geral</option>
+      <option value="/access">Acessos HTTP</option>
+      <option value="/events">Eventos</option>
+      <option value="/processes">Processos</option>
+      <option value="/changes">Alterações</option>
+      <option value="/network">Conexões</option>
+    </select>
+    <button>Consultar registros</button>
+  </form>
+  <p role="status" data-status></p>
+  <pre data-records style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+</section>
+<script src="{{ url_for('static', filename='incident-console.js') }}" defer></script>
+{% endblock %}

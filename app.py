@@ -16,11 +16,14 @@ import blog
 import challenge_admin
 import occurrences
 import teams
+import remote_worker
+import remote_relay
 from catalog import seed_catalog
 from catalog_corporate import seed_corporate_catalog
 
 app = Flask(__name__)
 production = os.environ.get('PURPLE_ENV') == 'production'
+remote_enabled = production and os.environ.get('REMOTE_LABS_ENABLED') == '1' and os.environ.get('REMOTE_RELAY_ENABLED') == '1'
 if production:
     if len(os.environ.get('SECRET_KEY', '')) < 32:
         raise RuntimeError('SECRET_KEY must contain at least 32 characters in production.')
@@ -67,7 +70,18 @@ def protect_request():
         abort(400)
     if hostname not in app.config['ALLOWED_HOSTS']:
         abort(400, description='Endereço de acesso não autorizado. Use o endereço local da aplicação.')
-    if production and request.endpoint in ('start_env', 'stop_env', 'ambientes', 'encerrar_ambiente', 'encerrar_todos'):
+    if any(isinstance(value, int) and value >= 2**63 for value in (request.view_args or {}).values()):
+        abort(404)
+    if request.endpoint in ('remote_worker_poll', 'remote_worker_result', 'remote_relay_poll', 'remote_relay_result'):
+        if not remote_enabled:
+            abort(503, description='Executor remoto indisponível.')
+        remote_worker.authenticate()
+        if request.endpoint == 'remote_worker_poll':
+            remote_expire_instances()
+        return
+    if request.endpoint in ('remote_relay_create', 'remote_relay_view', 'remote_lab_page') and not remote_enabled:
+        abort(404)
+    if production and request.endpoint in ('ambientes', 'encerrar_ambiente', 'encerrar_todos'):
         abort(503, description='O laboratório local não está disponível neste ambiente.')
     if session.get("user_id"):
         user = db().execute("SELECT id,name,role FROM users WHERE id=?", (session["user_id"],)).fetchone()
@@ -211,6 +225,14 @@ def init_db():
                  "Existe um arquivo que os robôs de busca foram instruídos a ignorar. Encontre a flag.",))
     challenge_admin.migrate(con)
     teams.migrate(con)
+    remote_worker.migrate(con)
+    remote_relay.migrate(con)
+    con.execute("""CREATE TABLE IF NOT EXISTS remote_challenge_instances(
+        id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+        challenge_id INTEGER NOT NULL REFERENCES challenges(id), instance TEXT NOT NULL UNIQUE,
+        answer_hash TEXT NOT NULL, start_job_id INTEGER NOT NULL REFERENCES remote_worker_jobs(id),
+        stop_job_id INTEGER REFERENCES remote_worker_jobs(id),
+        created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)""")
     occurrences.migrate(con)
     seed_catalog(con)
     seed_corporate_catalog(con)
@@ -445,7 +467,7 @@ def challenge(cid):
     c = d.execute("SELECT * FROM challenges WHERE id=?", (cid,)).fetchone()
     if not c or (not c["active"] and session.get("role") != "mentor"):
         abort(404)
-    if production and c['image']:
+    if production and c['image'] and (not remote_enabled or c['image'] != 'cti-lab/incident-01'):
         abort(503, description='Este laboratório precisa de um ambiente virtual conectado.')
     # Desafios Red/Blue Team são de equipe: sem equipe do mesmo lado, nem briefing nem envio.
     team_note = teams.team_block(d, uid, c) if session.get("role") == "participante" else None
@@ -474,7 +496,13 @@ def challenge(cid):
                 if failures >= 12:
                     d.rollback()
                     abort(429, description='Limite de 12 respostas incorretas em 24 horas atingido neste cenário. Aguarde a renovação do período.')
-            hashes = [r[0] for r in d.execute("SELECT flag_hash FROM instances WHERE user_id=? AND challenge_id=? AND active=1 AND expires_at>=?", (uid, cid, int(time.time())))]
+            if remote_enabled:
+                hashes = [r[0] for r in d.execute("""SELECT i.answer_hash FROM remote_challenge_instances i
+                    JOIN remote_worker_jobs j ON j.id=i.start_job_id
+                    WHERE i.user_id=? AND i.challenge_id=? AND i.expires_at>? AND i.stop_job_id IS NULL
+                    AND j.status='completed'""", (uid, cid, int(time.time())))]
+            else:
+                hashes = [r[0] for r in d.execute("SELECT flag_hash FROM instances WHERE user_id=? AND challenge_id=? AND active=1 AND expires_at>=?", (uid, cid, int(time.time())))]
             if not hashes:
                 d.rollback()
                 flash("Inicie o seu ambiente antes de enviar a flag.")
@@ -486,6 +514,15 @@ def challenge(cid):
         d.commit()
         flash("Flag correta!" if ok else "Flag incorreta. Tente de novo.")
         return redirect(f"/challenge/{cid}")
+    if remote_enabled and c["image"]:
+        remote_instance = d.execute("""SELECT i.*,j.status AS start_status
+            FROM remote_challenge_instances i JOIN remote_worker_jobs j ON j.id=i.start_job_id
+            WHERE i.user_id=? AND i.challenge_id=? AND i.stop_job_id IS NULL AND i.expires_at>?
+            ORDER BY i.id DESC LIMIT 1""", (uid, cid, int(time.time()))).fetchone()
+        focus_guard = session.get("role") == "participante" and not solved
+        return render_template("challenge.html", c=c, solved=solved, inst=None, remote_instance=remote_instance,
+                               remote_mode=True, now=int(time.time()), focus_guard=focus_guard,
+                               focus_count=occurrences.count(d, uid, cid) if focus_guard else 0)
     inst = active_instance(d, uid, cid) if c["image"] else None
     if inst:
         inst = dict(inst)
@@ -504,9 +541,103 @@ def challenge(cid):
     return render_template("challenge.html", c=c, solved=solved, inst=inst, now=int(time.time()),
                            focus_guard=focus_guard, focus_count=focus_count)
 
+def remote_expire_instances():
+    """Retire expired VMs via the worker; never reissue an uncertain start."""
+    d = db()
+    d.execute('BEGIN IMMEDIATE')
+    now = int(time.time())
+    d.execute("""UPDATE remote_worker_jobs SET status='failed', finished_at=?, flag=NULL
+        WHERE status='queued' AND id IN
+        (SELECT start_job_id FROM remote_challenge_instances WHERE expires_at<=?)""", (now, now))
+    rows = d.execute("""SELECT i.id,i.instance FROM remote_challenge_instances i
+        JOIN remote_worker_jobs j ON j.id=i.start_job_id
+        WHERE i.stop_job_id IS NULL AND i.expires_at<=?
+        AND j.status IN ('running','completed','interrupted')""", (now,)).fetchall()
+    for row in rows:
+        job = remote_worker.enqueue(d, request_key=secrets.token_urlsafe(24), action='stop', instance=row['instance'])
+        d.execute('UPDATE remote_challenge_instances SET stop_job_id=? WHERE id=?', (job, row['id']))
+    d.commit()
+
+
+def remote_start_env(cid):
+    d, uid = db(), session['user_id']
+    d.execute('BEGIN IMMEDIATE')
+    challenge = d.execute('SELECT * FROM challenges WHERE id=? AND active=1', (cid,)).fetchone()
+    if not challenge or challenge['image'] != 'cti-lab/incident-01':
+        d.rollback()
+        abort(404)
+    if session.get('role') != 'participante' or teams.team_block(d, uid, challenge):
+        d.rollback()
+        abort(403)
+    existing = d.execute("""SELECT i.id FROM remote_challenge_instances i
+        JOIN remote_worker_jobs j ON j.id=i.start_job_id
+        WHERE i.user_id=? AND i.challenge_id=? AND i.stop_job_id IS NULL AND j.status IN ('queued','running','completed','interrupted')
+        LIMIT 1""", (uid, cid)).fetchone()
+    if existing:
+        d.commit()
+        flash('Já existe uma solicitação para este desafio.')
+        return redirect(f'/challenge/{cid}')
+    count = d.execute("""SELECT COUNT(*) FROM remote_challenge_instances i
+        JOIN remote_worker_jobs j ON j.id=i.start_job_id
+        LEFT JOIN remote_worker_jobs stop ON stop.id=i.stop_job_id
+        WHERE j.status IN ('queued','running','completed','interrupted')
+        AND (i.stop_job_id IS NULL OR stop.status!='completed')""").fetchone()[0]
+    if count >= 1:
+        d.rollback()
+        flash('O laboratório está cheio ou aguardando reconciliação.')
+        return redirect(f'/challenge/{cid}')
+    per_user = d.execute("""SELECT COUNT(*) FROM remote_challenge_instances i
+        JOIN remote_worker_jobs j ON j.id=i.start_job_id
+        LEFT JOIN remote_worker_jobs stop ON stop.id=i.stop_job_id
+        WHERE i.user_id=? AND j.status IN ('queued','running','completed','interrupted')
+        AND (i.stop_job_id IS NULL OR stop.status!='completed')""", (uid,)).fetchone()[0]
+    if per_user >= MAX_PER_USER:
+        d.rollback()
+        flash('Você atingiu o limite de ambientes.')
+        return redirect(f'/challenge/{cid}')
+    now = int(time.time())
+    flag = 'CTF{' + secrets.token_hex(8) + '}'
+    name = f'lab-u{uid}-c{cid}-{secrets.token_hex(6)}'
+    answer = f'CTF{{192.0.2.{1 + int(flag[4:6], 16) % 254}}}' if challenge['image'] == 'cti-lab/incident-01' else flag
+    job = remote_worker.enqueue(d, request_key=secrets.token_urlsafe(24), action='start',
+                                instance=name, scenario=challenge['image'], flag=flag)
+    d.execute("""INSERT INTO remote_challenge_instances
+        (user_id,challenge_id,instance,answer_hash,start_job_id,created_at,expires_at)
+        VALUES (?,?,?,?,?,?,?)""", (uid, cid, name, h(answer), job, now, now + TTL))
+    d.commit()
+    flash('Solicitação enviada. Atualize a página para acompanhar.')
+    return redirect(f'/challenge/{cid}')
+
+
+def remote_stop_env(cid):
+    d, uid = db(), session['user_id']
+    d.execute('BEGIN IMMEDIATE')
+    row = d.execute("""SELECT i.id,i.instance,j.status,i.start_job_id FROM remote_challenge_instances i
+        JOIN remote_worker_jobs j ON j.id=i.start_job_id
+        WHERE i.user_id=? AND i.challenge_id=? AND i.stop_job_id IS NULL
+        ORDER BY i.id DESC LIMIT 1""", (uid, cid)).fetchone()
+    if row:
+        if row['status'] == 'queued':
+            now = int(time.time())
+            d.execute("UPDATE remote_worker_jobs SET status='failed', finished_at=?, flag=NULL WHERE id=?", (now, row['start_job_id']))
+            d.execute('UPDATE remote_challenge_instances SET expires_at=? WHERE id=?', (now, row['id']))
+        elif row['status'] in ('running', 'completed', 'interrupted'):
+            job = remote_worker.enqueue(d, request_key=secrets.token_urlsafe(24), action='stop', instance=row['instance'])
+            d.execute('UPDATE remote_challenge_instances SET stop_job_id=? WHERE id=?', (job, row['id']))
+        else:
+            d.execute('UPDATE remote_challenge_instances SET expires_at=? WHERE id=?', (int(time.time()), row['id']))
+    d.commit()
+    flash('Solicitação de encerramento registrada.')
+    return redirect(f'/challenge/{cid}')
+
+
 @app.route("/challenge/<int:cid>/start", methods=["POST"])
 @login_required
 def start_env(cid):
+    if production:
+        if not remote_enabled:
+            abort(503, description='Executor remoto indisponível.')
+        return remote_start_env(cid)
     with ENV_LOCK:
         return start_env_locked(cid)
 
@@ -561,6 +692,10 @@ def start_env_locked(cid):
 @app.route("/challenge/<int:cid>/stop", methods=["POST"])
 @login_required
 def stop_env(cid):
+    if production:
+        if not remote_enabled:
+            abort(503, description='Executor remoto indisponível.')
+        return remote_stop_env(cid)
     d = db()
     row = d.execute("SELECT * FROM instances WHERE user_id=? AND challenge_id=? AND active=1", (session["user_id"], cid)).fetchone()
     if row:
@@ -746,6 +881,17 @@ def toggle_job(jid):
     return redirect('/jobs')
 
 
+@app.get('/remote-lab/<int:instance_id>')
+@login_required
+def remote_lab_page(instance_id):
+    item = remote_relay.allowed_instance(db(), instance_id, session['user_id'], int(time.time()))
+    if not item:
+        abort(404)
+    return render_template('remote_lab.html', instance_id=instance_id, challenge_id=item[3])
+
+
+remote_worker.register_routes(app, db)
+remote_relay.register_routes(app, db, login_required)
 learning.register_routes(app, db, login_required)
 recruitment.register_routes(app, db, login_required, mentor_required)
 selection.register_routes(app, db, login_required)
