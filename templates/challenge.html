@@ -20,7 +20,7 @@
 <div class="challenge-briefing">
 <section class="card">
 <h2>Briefing da missão</h2>
-<div class="pre">{{ c.description }}</div>
+<div class="pre">{% if remote_mode and c.image == 'cti-lab/web-01' %}Audite a publicação de documentos fictícios. Compare o catálogo aprovado com o canal registrado para identificar o documento publicado fora da regra. Envie a referência de revisão desse documento.{% else %}{{ c.description }}{% endif %}</div>
 {% if c.image == 'cti-lab/incident-01' %}<p class="field-help">Você tem até 12 respostas incorretas em 24 horas. Reiniciar o ambiente não reinicia esse limite. Correlacione os registros antes de enviar.</p>{% endif %}
 </section></div>
 <div class="challenge-actions">{% if c.image %}<section class="card lab-card">

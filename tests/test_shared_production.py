@@ -62,6 +62,45 @@ with sqlite3.connect(app.DB) as connection:
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_all_active_challenges_are_accessible_with_the_correct_team(self):
+        result = self.run_python('''
+from contextlib import closing
+import sqlite3, app
+
+app.init_db()
+with closing(sqlite3.connect(app.DB)) as con, con:
+    con.execute("INSERT INTO users(name,email) VALUES('Red QA','red@example.invalid'),('Blue QA','blue@example.invalid')")
+    con.execute("INSERT INTO team_members SELECT id,2,0 FROM teams WHERE name='Red Team Alpha'")
+    con.execute("INSERT INTO team_members SELECT id,3,0 FROM teams WHERE name='Blue Team Alpha'")
+    challenges = con.execute("SELECT id,side,image FROM challenges WHERE active=1").fetchall()
+    con.execute("UPDATE challenges SET flag_hash=? WHERE image IS NULL", (app.h('CTF{synthetic-catalog-test}'),))
+
+base = 'https://example.test'
+clients = {}
+for side, uid in [('Red Team',2), ('Blue Team',3)]:
+    clients[side] = app.app.test_client()
+    with clients[side].session_transaction(base_url=base) as session:
+        session.update(user_id=uid, csrf='test')
+
+scenarios = set()
+for cid, side, image in challenges:
+    response = clients.get(side, clients['Blue Team']).get(f'/challenge/{cid}', base_url=base)
+    assert response.status_code == 200, (cid, response.status_code)
+    assert b'name="flag"' in response.data, cid
+    if image:
+        assert f'/challenge/{cid}/start'.encode() in response.data, cid
+        scenarios.add(image)
+    else:
+        response = clients.get(side, clients['Blue Team']).post(f'/challenge/{cid}', base_url=base,
+            data={'csrf_token':'test', 'flag':'CTF{synthetic-catalog-test}'})
+        assert response.status_code == 302, (cid, response.status_code)
+        with closing(sqlite3.connect(app.DB)) as con:
+            assert con.execute('SELECT count(*) FROM attempts WHERE challenge_id=? AND correct=1', (cid,)).fetchone()[0] == 1, cid
+
+assert scenarios == set(app.remote_relay.PATHS)
+''', {**self.environment, 'REMOTE_LABS_ENABLED': '1', 'REMOTE_RELAY_ENABLED': '1'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_missing_secret_and_unsafe_mentor_are_rejected(self):
         environment = self.environment.copy()
         environment.pop('SECRET_KEY')

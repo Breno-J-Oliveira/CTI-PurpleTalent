@@ -9,12 +9,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label for="incident-section">Seção</label>
     <select id="incident-section" name="path">
-      <option value="/">Visão geral</option>
-      <option value="/access">Acessos HTTP</option>
-      <option value="/events">Eventos</option>
-      <option value="/processes">Processos</option>
-      <option value="/changes">Alterações</option>
-      <option value="/network">Conexões</option>
+      {% for path,label in sections.items() %}<option value="{{ path }}">{{ label }}</option>{% endfor %}
     </select>
     <button>Consultar registros</button>
   </form>

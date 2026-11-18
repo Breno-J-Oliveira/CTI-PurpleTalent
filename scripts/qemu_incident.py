@@ -14,6 +14,12 @@ import http.client
 import orchestrator
 
 
+GUEST_SOURCES = {
+    'cti-lab/incident-01': 'challenges/incident-01/app.py',
+    'cti-lab/web-01': 'challenges/intranet_audit.py',
+}
+
+
 class QemuIncident:
     def __init__(self, runtime, wheels):
         self.runtime = Path(runtime).resolve(strict=True)
@@ -29,14 +35,14 @@ class QemuIncident:
         self.process = None
         self.instance = None
 
-    def seed(self, folder, flag):
+    def seed(self, folder, flag, scenario):
         entries = []
 
         def add(path, data, mode='0644'):
             entries.append(dict(path=path, encoding='b64', owner='root:root',
                                 permissions=mode, content=base64.b64encode(data).decode('ascii')))
 
-        source = Path(__file__).resolve().parents[1] / 'challenges/incident-01/app.py'
+        source = Path(__file__).resolve().parents[1] / GUEST_SOURCES[scenario]
         add('/opt/cti-case/app.py', source.read_bytes())
         add('/opt/cti-case/config', ('FLAG=' + flag + '\n').encode('ascii'), '0600')
         for wheel in self.wheels:
@@ -80,7 +86,7 @@ WantedBy=multi-user.target
             iso.close()
 
     def start(self, instance, scenario, guest_port, flag):
-        if scenario != 'cti-lab/incident-01' or guest_port != 5000:
+        if scenario not in GUEST_SOURCES or guest_port != 5000:
             raise orchestrator.LabError('Cenário não disponível neste executor.')
         if self.process is not None:
             raise orchestrator.LabError('Já há uma VM sob supervisão.')
@@ -88,7 +94,7 @@ WantedBy=multi-user.target
             raise orchestrator.LabError('Espaço insuficiente no disco do runtime.')
         folder = Path(tempfile.mkdtemp(prefix='incident-', dir=self.runtime))
         disk = folder / 'disk.qcow2'
-        self.seed(folder, flag)
+        self.seed(folder, flag, scenario)
         subprocess.run([str(self.image_tool),'create','-f','qcow2','-F','qcow2','-b',str(self.base),str(disk)],
                        check=True, timeout=30, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         port = orchestrator._free_port()

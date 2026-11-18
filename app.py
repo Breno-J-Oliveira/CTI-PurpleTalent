@@ -467,7 +467,7 @@ def challenge(cid):
     c = d.execute("SELECT * FROM challenges WHERE id=?", (cid,)).fetchone()
     if not c or (not c["active"] and session.get("role") != "mentor"):
         abort(404)
-    if production and c['image'] and (not remote_enabled or c['image'] != 'cti-lab/incident-01'):
+    if production and c['image'] and (not remote_enabled or c['image'] not in remote_relay.PATHS):
         abort(503, description='Este laboratório precisa de um ambiente virtual conectado.')
     # Desafios Red/Blue Team são de equipe: sem equipe do mesmo lado, nem briefing nem envio.
     team_note = teams.team_block(d, uid, c) if session.get("role") == "participante" else None
@@ -563,7 +563,7 @@ def remote_start_env(cid):
     d, uid = db(), session['user_id']
     d.execute('BEGIN IMMEDIATE')
     challenge = d.execute('SELECT * FROM challenges WHERE id=? AND active=1', (cid,)).fetchone()
-    if not challenge or challenge['image'] != 'cti-lab/incident-01':
+    if not challenge or challenge['image'] not in remote_relay.PATHS:
         d.rollback()
         abort(404)
     if session.get('role') != 'participante' or teams.team_block(d, uid, challenge):
@@ -887,7 +887,7 @@ def remote_lab_page(instance_id):
     item = remote_relay.allowed_instance(db(), instance_id, session['user_id'], int(time.time()))
     if not item:
         abort(404)
-    return render_template('remote_lab.html', instance_id=instance_id, challenge_id=item[3])
+    return render_template('remote_lab.html', instance_id=instance_id, challenge_id=item[3], sections=remote_relay.PATHS[item[2]])
 
 
 remote_worker.register_routes(app, db)

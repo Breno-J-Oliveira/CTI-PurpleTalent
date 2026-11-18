@@ -13,7 +13,10 @@ from flask import abort, jsonify, request, session
 import remote_worker
 
 PATHS = {
-    'cti-lab/incident-01': frozenset(('/', '/access', '/events', '/processes', '/changes', '/network')),
+    'cti-lab/incident-01': {'/': 'Visão geral', '/access': 'Acessos HTTP', '/events': 'Eventos',
+                             '/processes': 'Processos', '/changes': 'Alterações', '/network': 'Conexões'},
+    'cti-lab/web-01': {'/': 'Visão geral', '/catalogo': 'Catálogo aprovado',
+                       '/publicacoes': 'Registro de publicação', '/revisoes': 'Referências de revisão'},
 }
 TYPES = frozenset(('text/html', 'text/plain'))
 MAX_BODY = 32768
@@ -37,7 +40,7 @@ def allowed_instance(con, identifier, user_id, now):
         JOIN challenges c ON c.id=i.challenge_id
         JOIN remote_worker_jobs j ON j.id=i.start_job_id
         WHERE i.id=? AND i.user_id=? AND i.expires_at>?
-        AND i.stop_job_id IS NULL AND j.status='completed' AND c.active=1 AND c.image='cti-lab/incident-01' ''',
+        AND i.stop_job_id IS NULL AND j.status='completed' AND c.active=1 AND c.image IN ('cti-lab/incident-01','cti-lab/web-01') ''',
         (identifier, user_id, now)).fetchone()
 
 
@@ -106,7 +109,7 @@ def register_routes(app, db, login_required):
             JOIN challenges c ON c.id=i.challenge_id
             JOIN remote_worker_jobs j ON j.id=i.start_job_id
             WHERE r.status='queued' AND r.deadline>? AND i.expires_at>?
-            AND i.stop_job_id IS NULL AND j.status='completed' AND c.active=1 AND c.image='cti-lab/incident-01'
+            AND i.stop_job_id IS NULL AND j.status='completed' AND c.active=1 AND c.image IN ('cti-lab/incident-01','cti-lab/web-01')
             ORDER BY r.id LIMIT 1''', (now, now)).fetchone()
         job = None
         if row:
@@ -145,7 +148,7 @@ def register_routes(app, db, login_required):
             JOIN challenges c ON c.id=i.challenge_id
             JOIN remote_worker_jobs j ON j.id=i.start_job_id
             WHERE r.id=? AND r.status='running' AND r.lease_until>? AND r.deadline>?
-            AND i.expires_at>? AND i.stop_job_id IS NULL AND j.status='completed' AND c.active=1 AND c.image='cti-lab/incident-01' ''',
+            AND i.expires_at>? AND i.stop_job_id IS NULL AND j.status='completed' AND c.active=1 AND c.image IN ('cti-lab/incident-01','cti-lab/web-01') ''',
             (data['id'], now, now, now)).fetchone()
         if not row or not row[0] or not hmac.compare_digest(row[0], data['lease']):
             con.rollback()
