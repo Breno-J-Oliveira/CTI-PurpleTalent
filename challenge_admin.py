@@ -12,7 +12,8 @@ CATEGORY_SUGGESTIONS = (
     'Análise de logs', 'Forense', 'Hardening', 'Resposta a incidentes',
 )
 COLUMNS = {'active': 'INTEGER NOT NULL DEFAULT 1', 'audience': "TEXT NOT NULL DEFAULT 'Candidatos'",
-           'created_by': 'INTEGER', 'updated_at': 'INTEGER'}
+           'created_by': 'INTEGER', 'updated_at': 'INTEGER',
+           'requires_team': 'INTEGER NOT NULL DEFAULT 0 CHECK(requires_team IN (0,1))'}
 
 
 def migrate(con):
@@ -31,6 +32,7 @@ def clean(form, current=None):
     """Valida o formulário e devolve (dados, erros). `current` é a linha existente na edição."""
     editing_lab = bool(current and current['image'])
     data = {k: (form.get(k) or '').strip() for k in ('title', 'category', 'side', 'audience', 'description', 'answer')}
+    data['requires_team'] = int(form.get('requires_team') == '1')
     errors = []
     if not 3 <= len(data['title']) <= 120:
         errors.append('O título deve ter de 3 a 120 caracteres.')
@@ -38,6 +40,8 @@ def clean(form, current=None):
         errors.append('A categoria (área) deve ter de 2 a 60 caracteres.')
     if data['side'] not in SIDES:
         errors.append('Escolha uma trilha da lista.')
+    if data['requires_team'] and data['side'] not in ('Red Team', 'Blue Team'):
+        errors.append('A exigência de equipe está disponível nas trilhas Red Team e Blue Team.')
     if data['audience'] not in AUDIENCES:
         errors.append('Escolha o público do desafio.')
     if not 20 <= len(data['description']) <= 4000:
@@ -95,10 +99,11 @@ def register_routes(app, db, mentor_required):
                 errors.append('Já existe um desafio com este título. Use um título diferente.')
             if not errors:
                 now = int(time.time())
-                d.execute('INSERT INTO challenges(title,category,side,points,description,hint,url,flag_hash,audience,active,created_by,updated_at) '
-                          'VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+                d.execute('INSERT INTO challenges(title,category,side,points,description,hint,url,flag_hash,audience,active,created_by,updated_at,requires_team) '
+                          'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
                           (data['title'], data['category'], data['side'], data['points'], data['description'], '', '',
-                           answer_hash(data['answer']), data['audience'], 1 if request.form.get('active') else 0, session['user_id'], now))
+                           answer_hash(data['answer']), data['audience'], 1 if request.form.get('active') else 0,
+                           session['user_id'], now, data['requires_team']))
                 d.commit()
                 flash('Desafio publicado para os participantes.' if request.form.get('active') else 'Desafio salvo como inativo.')
                 return redirect('/admin/challenges')
@@ -117,9 +122,9 @@ def register_routes(app, db, mentor_required):
             if not errors and title_taken(d, data['title'], cid):
                 errors.append('Já existe outro desafio com este título.')
             if not errors:
-                sets = ['title=?', 'category=?', 'side=?', 'points=?', 'description=?', 'audience=?', 'active=?', 'updated_at=?']
+                sets = ['title=?', 'category=?', 'side=?', 'points=?', 'description=?', 'audience=?', 'active=?', 'updated_at=?', 'requires_team=?']
                 values = [data['title'], data['category'], data['side'], data['points'], data['description'],
-                          data['audience'], 1 if request.form.get('active') else 0, int(time.time())]
+                          data['audience'], 1 if request.form.get('active') else 0, int(time.time()), data['requires_team']]
                 if data['answer']:
                     sets.append('flag_hash=?')
                     values.append(answer_hash(data['answer']))

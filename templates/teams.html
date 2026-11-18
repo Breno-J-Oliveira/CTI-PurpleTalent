@@ -12,7 +12,7 @@
 </div></article>{% endmacro %}
 {% block content %}
 {% set is_mentor = session.role == 'mentor' %}{% set can_join = session.role == 'participante' and not mine %}
-<section class="page-heading"><span class="pill">Arena</span><h1>Equipes</h1><p>Os desafios de Red Team e Blue Team são resolvidos em equipe. Cada equipe tem até {{ max_members }} pessoas e atua em um lado. Um desafio resolvido por qualquer integrante conta uma vez para a equipe.</p></section>
+<section class="page-heading"><span class="pill">Arena</span><h1>Equipes</h1><p>Você pode participar de desafios individuais sem equipe. Nos desafios marcados como colaborativos, entre em uma equipe da trilha indicada. Cada equipe tem até {{ max_members }} pessoas e atua em um lado. Um desafio resolvido por qualquer integrante conta uma vez para a equipe.</p></section>
 <div class="metrics"><div><span>Equipes Red Team</span><strong>{{ red|length }}</strong></div><div><span>Equipes Blue Team</span><strong>{{ blue|length }}</strong></div><div><span>Pessoas em equipes</span><strong>{{ teams|sum(attribute='members', start=[])|length }}</strong></div></div>
 {% if session.role == 'participante' %}{% if mine %}<section class="card team-mine-summary"><h2>Sua equipe</h2><p>Você está na equipe <strong>{{ mine.name }}</strong> ({{ mine.side }}). {{ 'Equipe completa: vocês podem resolver os desafios juntos.' if mine.free == 0 else 'Faltam ' ~ mine.free ~ (' pessoa' if mine.free == 1 else ' pessoas') ~ ' para completar o time.' }}</p></section>
 {% else %}<section class="card team-create"><h2>Criar uma equipe</h2><p class="muted">Você ainda não está em uma equipe. Crie a sua ou entre em uma que tenha vaga livre, abaixo.</p>

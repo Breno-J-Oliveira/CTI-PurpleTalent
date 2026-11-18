@@ -474,7 +474,6 @@ def challenge(cid):
         abort(404)
     if production and c['image'] and (not remote_enabled or c['image'] not in remote_relay.PATHS):
         abort(503, description='Este laboratório precisa de um ambiente virtual conectado.')
-    # Desafios Red/Blue Team são de equipe: sem equipe do mesmo lado, nem briefing nem envio.
     team_note = teams.team_block(d, uid, c) if session.get("role") == "participante" else None
     if team_note:
         return render_template("challenge.html", c=c, locked=team_note, solved=False, inst=None, now=int(time.time()),

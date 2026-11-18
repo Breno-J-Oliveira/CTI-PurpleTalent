@@ -43,13 +43,9 @@ def user_side(con, user_id):
 
 
 def team_block(con, user_id, challenge):
-    """Mensagem de bloqueio quando o desafio é de equipe e o usuário não cumpre a regra; senão None.
-
-    Desafios Red Team e Blue Team exigem participar de uma equipe do mesmo lado.
-    Aquecimento e Corporativo continuam livres.
-    """
+    """Exige equipe da trilha nos desafios marcados como colaborativos."""
     needed = challenge['side']
-    if needed not in SIDES:
+    if not challenge['requires_team'] or needed not in SIDES:
         return None
     mine = user_side(con, user_id)
     if mine == needed:

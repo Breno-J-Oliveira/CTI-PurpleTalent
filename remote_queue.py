@@ -42,7 +42,7 @@ def next_job(con, now):
             WHERE i.created_at<=? OR c.active!=1 OR c.image IS NULL
                 OR c.image NOT IN ('cti-lab/incident-01','cti-lab/web-01')
                 OR u.role!='participante'
-                OR (c.side IN ('Red Team','Blue Team') AND NOT EXISTS (
+                OR (c.requires_team=1 AND NOT EXISTS (
                     SELECT 1 FROM team_members m JOIN teams t ON t.id=m.team_id
                     WHERE m.user_id=i.user_id AND t.side=c.side)))""", (now, now - WAIT_SECONDS))
     for row in con.execute(f"""SELECT i.id,i.instance {JOINS}

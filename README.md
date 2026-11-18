@@ -34,6 +34,7 @@ Crie o diretório de destino fora do repositório e execute `.\.venv\Scripts\pyt
 
 - Cadastro, login, logout e edição de nome/equipe.
 - Arenas com busca e filtro, desafios de treino, dicas quando disponíveis e validação de respostas.
+- Desafios individuais em todas as trilhas. A mentoria pode exigir equipe da mesma trilha em desafios colaborativos Red Team ou Blue Team.
 - Intranet em máquina virtual individual com flag única, porta local, limite de instâncias e expiração de 60 minutos.
 - Investigação final em laboratório VirtualBox isolado: captura fictícia de servidor com registros de acesso, eventos e processos, sem dicas. Os dados mudam por instância; trata-se de treinamento, sem garantia antifraude para seleção real.
 - Ranking calculado a partir de desafios resolvidos, sem duplicar pontos por reenvio.

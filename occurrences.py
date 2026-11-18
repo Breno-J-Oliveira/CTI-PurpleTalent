@@ -68,7 +68,7 @@ def register_routes(app, db, login_required, mentor_required):
         if session.get('role') != 'participante':
             abort(403)
         d, uid = db(), session['user_id']
-        challenge = d.execute('SELECT active,side FROM challenges WHERE id=?', (cid,)).fetchone()
+        challenge = d.execute('SELECT active,side,requires_team FROM challenges WHERE id=?', (cid,)).fetchone()
         if not challenge or not challenge['active']:
             abort(404)
         if teams.team_block(d, uid, challenge):

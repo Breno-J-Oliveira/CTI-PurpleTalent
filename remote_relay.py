@@ -40,7 +40,10 @@ def allowed_instance(con, identifier, user_id, now):
         JOIN challenges c ON c.id=i.challenge_id
         JOIN remote_worker_jobs j ON j.id=i.start_job_id
         WHERE i.id=? AND i.user_id=? AND i.expires_at>?
-        AND i.stop_job_id IS NULL AND j.status='completed' AND c.active=1 AND c.image IN ('cti-lab/incident-01','cti-lab/web-01') ''',
+        AND i.stop_job_id IS NULL AND j.status='completed' AND c.active=1 AND c.image IN ('cti-lab/incident-01','cti-lab/web-01')
+        AND (c.requires_team=0 OR EXISTS (
+            SELECT 1 FROM team_members m JOIN teams t ON t.id=m.team_id
+            WHERE m.user_id=i.user_id AND t.side=c.side))''',
         (identifier, user_id, now)).fetchone()
 
 

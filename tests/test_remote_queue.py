@@ -31,8 +31,6 @@ class RemoteQueueTests(unittest.TestCase):
             for uid in (2, 3, 4):
                 con.execute("INSERT INTO users(id,name,email,role) VALUES(?,?,?,'participante')",
                             (uid, f'Pessoa {uid}', f'{uid}@example.invalid'))
-                con.execute("""INSERT INTO team_members SELECT id,?,0
-                            FROM teams WHERE name='Blue Team Alpha'""", (uid,))
             self.challenge = con.execute("""SELECT id FROM challenges WHERE image='cti-lab/incident-01'""").fetchone()[0]
         self.path = f'/challenge/{self.challenge}'
         self.worker = site.app.test_client()
@@ -142,6 +140,11 @@ class RemoteQueueTests(unittest.TestCase):
         self.assertTrue(self.poll()['instance'].startswith('lab-u3-'))
 
     def test_dispatch_rechecks_team_and_queue_expiration(self):
+        with closing(sqlite3.connect(site.DB)) as con, con:
+            con.execute('UPDATE challenges SET requires_team=1 WHERE id=?', (self.challenge,))
+            con.execute("""INSERT INTO team_members
+                SELECT t.id,u.id,0 FROM teams t CROSS JOIN users u
+                WHERE t.name='Blue Team Alpha' AND u.id IN (2,3,4)""")
         for uid in (2, 3, 4):
             self.request(self.client(uid), 'start')
         with closing(sqlite3.connect(site.DB)) as con, con:

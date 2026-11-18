@@ -3,6 +3,7 @@ import sqlite3
 import tempfile
 import threading
 import unittest
+from contextlib import closing
 os.environ.setdefault('SECRET_KEY', 'test-only-not-a-production-secret')
 import app as module
 import occurrences
@@ -256,6 +257,11 @@ class TeamRequirementTests(Base):
     RED, BLUE, WARMUP = 3, 4, 1     # Texto estranho (Red), Quem está atacando (Blue), Boas-vindas (Aquecimento)
     RED_FLAG = 'CTF{base64_nao_e_criptografia}'
 
+    def setUp(self):
+        super().setUp()
+        with closing(sqlite3.connect(module.DB)) as con, con:
+            con.execute('UPDATE challenges SET requires_team=1 WHERE id IN (?,?)', (self.RED, self.BLUE))
+
     def attempts(self):
         return self.row('SELECT COUNT(*) FROM attempts')[0]
 
@@ -317,6 +323,8 @@ class TeamRequirementTests(Base):
         from unittest.mock import patch
         ana = self.person(1)
         lab = self.row("SELECT id FROM challenges WHERE image='cti-lab/web-01'")[0]   # Red Team
+        with closing(sqlite3.connect(module.DB)) as con, con:
+            con.execute('UPDATE challenges SET requires_team=1 WHERE id=?', (lab,))
         with patch.object(module.orch, 'start', return_value=12345) as start:
             self.post(f'/challenge/{lab}/start', {}, ana)
             start.assert_not_called()
@@ -331,19 +339,25 @@ class TeamRequirementTests(Base):
         ana = self.person(1)
         page = ana.get('/challenges')
         self.assertIn('Requer equipe Red Team'.encode(), page.data)
-        self.assertIn('Entre em uma equipe'.encode(), page.data)
+        self.assertIn('entre em uma equipe'.encode(), page.data)
         self.post('/teams/create', {'name': 'Equipe Lista', 'side': 'Blue Team'}, ana)
         page = ana.get('/challenges')
         self.assertIn('Requer equipe Red Team'.encode(), page.data)
         self.assertIn('Sua equipe é'.encode(), page.data)
-        self.assertNotIn('Requer equipe Blue Team'.encode(), page.data)
+        self.assertIn('Requer equipe Blue Team'.encode(), page.data)
 
-    def test_mentor_created_red_challenge_also_requires_team(self):
+    def test_mentor_can_require_team_when_creating_red_challenge(self):
         mentor = self.mentor()
         self.post('/admin/challenges', {'title': 'Ataque novo', 'category': 'Web', 'side': 'Red Team', 'audience': 'Candidatos',
-                                        'points': '100', 'description': 'Descrição longa o suficiente para valer.', 'answer': 'CTF{x}', 'active': '1'}, mentor)
+                                        'points': '100', 'description': 'Descrição longa o suficiente para valer.', 'answer': 'CTF{x}', 'active': '1', 'requires_team': '1'}, mentor)
         cid = self.row("SELECT id FROM challenges WHERE title='Ataque novo'")[0]
-        self.assertIn('Desafio em equipe'.encode(), self.person(1).get(f'/challenge/{cid}').data)
+        client = self.person(1)
+        self.assertIn('Desafio em equipe'.encode(), client.get(f'/challenge/{cid}').data)
+        self.assertEqual(self.post(f'/admin/challenges/{cid}', {
+            'title': 'Ataque novo', 'category': 'Web', 'side': 'Red Team', 'audience': 'Candidatos',
+            'points': '100', 'description': 'Descrição longa o suficiente para valer.', 'active': '1',
+        }, mentor).status_code, 302)
+        self.assertIn(b'name="flag"', client.get(f'/challenge/{cid}').data)
 
 
 if __name__ == '__main__':

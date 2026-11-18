@@ -62,36 +62,38 @@ with sqlite3.connect(app.DB) as connection:
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_all_active_challenges_are_accessible_with_the_correct_team(self):
+    def test_all_current_challenges_are_accessible_without_team(self):
         result = self.run_python('''
 from contextlib import closing
 import sqlite3, app
 
 app.init_db()
 with closing(sqlite3.connect(app.DB)) as con, con:
-    con.execute("INSERT INTO users(name,email) VALUES('Red QA','red@example.invalid'),('Blue QA','blue@example.invalid')")
-    con.execute("INSERT INTO team_members SELECT id,2,0 FROM teams WHERE name='Red Team Alpha'")
-    con.execute("INSERT INTO team_members SELECT id,3,0 FROM teams WHERE name='Blue Team Alpha'")
-    challenges = con.execute("SELECT id,side,image FROM challenges WHERE active=1").fetchall()
+    con.execute("INSERT INTO users(name,email) VALUES('Pessoa QA','solo@example.invalid')")
+    challenges = con.execute("SELECT id,image FROM challenges WHERE active=1").fetchall()
     con.execute("UPDATE challenges SET flag_hash=? WHERE image IS NULL", (app.h('CTF{synthetic-catalog-test}'),))
 
 base = 'https://example.test'
-clients = {}
-for side, uid in [('Red Team',2), ('Blue Team',3)]:
-    clients[side] = app.app.test_client()
-    with clients[side].session_transaction(base_url=base) as session:
-        session.update(user_id=uid, csrf='test')
+client = app.app.test_client()
+with client.session_transaction(base_url=base) as session:
+    session.update(user_id=2, csrf='test')
 
 scenarios = set()
-for cid, side, image in challenges:
-    response = clients.get(side, clients['Blue Team']).get(f'/challenge/{cid}', base_url=base)
+for cid, image in challenges:
+    response = client.get(f'/challenge/{cid}', base_url=base)
     assert response.status_code == 200, (cid, response.status_code)
     assert b'name="flag"' in response.data, cid
     if image:
         assert f'/challenge/{cid}/start'.encode() in response.data, cid
+        response = client.post(f'/challenge/{cid}/start', base_url=base, data={'csrf_token':'test'})
+        assert response.status_code == 302, (cid, response.status_code)
+        status = client.get(f'/challenge/{cid}/lab-status', base_url=base)
+        assert 'Posição 1 na fila'.encode() in status.data, cid
+        response = client.post(f'/challenge/{cid}/stop', base_url=base, data={'csrf_token':'test'})
+        assert response.status_code == 302, (cid, response.status_code)
         scenarios.add(image)
     else:
-        response = clients.get(side, clients['Blue Team']).post(f'/challenge/{cid}', base_url=base,
+        response = client.post(f'/challenge/{cid}', base_url=base,
             data={'csrf_token':'test', 'flag':'CTF{synthetic-catalog-test}'})
         assert response.status_code == 302, (cid, response.status_code)
         with closing(sqlite3.connect(app.DB)) as con:

@@ -110,3 +110,5 @@ Fontes: https://help.pythonanywhere.com/pages/FreeAccountsFeatures, https://help
 ## Atualizar a fila de laboratórios
 
 Antes da atualização, aguarde o fim das sessões e faça uma cópia do SQLite. No Bash do PythonAnywhere, rode o git pull e a inicialização do passo 2 para aplicar os índices da fila. Depois use **Reload**. Na conta com a integração já ativa, mantenha as variáveis e a credencial do executor. Para o laboratório online, siga [a operação das VMs](PREPARACAO-VM-REMOTA.md).
+
+Para liberar os desafios individuais sem equipe em uma instalação existente, siga o mesmo procedimento de atualização. A inicialização inclui a coluna que registra o requisito de equipe e mantém tentativas e pontuações. Os desafios atuais ficam individuais. Em **Mentoria → Desafios**, marque **Exigir equipe da mesma trilha** quando a atividade for colaborativa.

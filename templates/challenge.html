@@ -5,7 +5,7 @@
 <span class="points">{{ c.points }} pontos</span>
 </div>
 <h1>{{ c.title }}</h1>
-<p>{{ c.category }}</p>
+<p>{{ c.category }} · {{ 'Em equipe' if c.requires_team else 'Individual' }}</p>
 </section>
 {% if locked %}<section class="card team-lock" role="note"><h2>Desafio em equipe</h2><p>{{ locked }}</p><a class="button" href="/teams">Ir para equipes</a></section>{% else %}
 {% if focus_guard %}<section class="card focus-banner" data-focus-guard data-url="/challenge/{{ c.id }}/occurrence" data-csrf="{{ csrf_token() }}" data-count="{{ focus_count }}">
