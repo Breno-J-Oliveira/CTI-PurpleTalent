@@ -4,6 +4,7 @@
 <a class="back" href="{{ url_for('challenge', cid=challenge_id) }}">Voltar ao desafio</a>
 <section class="card" data-incident-console data-request="{{ url_for('remote_relay_create', instance_id=instance_id) }}">
   <h1>Laboratório de investigação</h1>
+  <p data-lab-time data-remaining="{{ [expires_at - server_now, 0]|max }}">Tempo restante: {{ ((expires_at - server_now) / 60)|round(0, 'ceil')|int }} min</p>
   <p>Consulte os registros e volte ao desafio para enviar sua resposta.</p>
   <form>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

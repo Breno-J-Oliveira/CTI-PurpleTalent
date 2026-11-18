@@ -1,5 +1,7 @@
 > Versão atual da equipe, com equipes iniciais e configuração de banco compartilhado. Consulte [hospedagem](docs/HOSPEDAGEM.md).
 
+Os laboratórios online **Intranet esquecida** e **Incidente em andamento** usam uma fila compartilhada no SQLite. Os candidatos veem a posição e o prazo no desafio. A mentoria acompanha a ordem e a situação em **Ambientes virtuais**. Consulte a [operação dos laboratórios](docs/PREPARACAO-VM-REMOTA.md) e a [hospedagem](docs/HOSPEDAGEM.md).
+
 # Purple Talent
 
 Integração visual para 19/11: [entrega e verificação](docs/ENTREGA-POLIMENTO-19.md), [imagens e origem](docs/IMAGENS-APRESENTACAO.md). Para iniciar esta cópia sem ambiguidades: `./scripts/run_local.ps1`; para a demonstração separada sem máquinas virtuais: `./scripts/run_local.ps1 -Demo -Port 5057`. O launcher identifica pasta/versão/base e recusa portas ocupadas.

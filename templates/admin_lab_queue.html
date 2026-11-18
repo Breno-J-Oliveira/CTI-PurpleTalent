@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}Fila de laboratórios{% endblock %}
+{% block content %}
+<section class="page-heading">
+    <h1>Fila de laboratórios</h1>
+    <p>O executor atende uma sessão por vez.</p>
+    <a class="button secondary" href="{{ url_for('ambientes') }}">Atualizar fila</a>
+</section>
+<section class="card">
+{% if rows %}
+    <div class="table-wrap" role="region" aria-label="Reservas de laboratório" tabindex="0">
+        <table>
+            <thead><tr><th scope="col">Participante</th><th scope="col">Desafio</th><th scope="col">Situação</th></tr></thead>
+            <tbody>
+            {% for row in rows %}
+            <tr>
+                <td>{{ row.name }}</td>
+                <td>{{ row.title }}</td>
+                <td>{% if row.stop_status in ('interrupted', 'failed') or row.start_status == 'interrupted' %}
+                    Requer verificação do executor
+                    {% elif row.stop_status or (row.start_status == 'completed' and row.expires_at <= now) %}
+                    Aguardando desligamento
+                    {% elif row.start_status == 'queued' %}Na fila
+                    {% elif row.start_status == 'running' %}Iniciando VM
+                    {% else %}Pronto · {{ ((row.expires_at - now) / 60)|round(0, 'ceil')|int }} min restantes
+                    {% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <p>Nenhuma reserva em andamento ou aguardando.</p>
+{% endif %}
+</section>
+{% endblock %}

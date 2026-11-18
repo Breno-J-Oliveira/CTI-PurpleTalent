@@ -25,15 +25,13 @@
 </section></div>
 <div class="challenge-actions">{% if c.image %}<section class="card lab-card">
 <h2>Seu ambiente virtual</h2>{% if remote_mode %}
-{% if remote_instance %}
-{% if remote_instance.start_status == 'completed' %}<p class="ok">Ambiente iniciado.</p>
-<a class="button secondary full" data-lab-link href="/remote-lab/{{ remote_instance.id }}">Abrir laboratório</a>
-{% elif remote_instance.start_status in ['queued','running'] %}<p role="status">Preparando o ambiente. Atualize esta página para acompanhar.</p>
-{% else %}<p role="status">O ambiente não pôde ser iniciado. A equipe precisa verificar o executor.</p>{% endif %}
-<p>Expira em <strong data-expiry="{{ remote_instance.expires_at }}">{{ ((remote_instance.expires_at - now) / 60)|round(0)|int }} min</strong>.</p>
-<form method="post" action="/challenge/{{ c.id }}/stop"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="danger full">Encerrar ambiente</button></form>
-{% else %}<p>Solicite um ambiente para investigar.</p>
-<form method="post" action="/challenge/{{ c.id }}/start" data-loading="Preparando ambiente…"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="full">Iniciar ambiente</button></form>{% endif %}
+<div data-lab-reservation="{{ url_for('remote_lab_status', cid=c.id) }}" aria-live="polite"
+     {% if reservation.state in ('empty', 'ended', 'failed') %}data-lab-idle{% endif %}>
+{% include 'remote_queue.html' %}
+</div>
+<p data-lab-status-error hidden role="status">Não foi possível atualizar a fila. Tentaremos novamente em instantes.</p>
+<noscript><p>Atualize a página para acompanhar sua reserva.</p></noscript>
+<script src="{{ url_for('static', filename='remote-queue.js') }}" defer></script>
 {% elif inst %}{% if inst.available %}<span class="tag blueteam">Ambiente iniciado</span>
 <p>Acesse o ambiente para investigar os registros disponíveis.</p>
 <a class="button secondary full" data-lab-link href="http://127.0.0.1:{{ inst.port }}" target="_blank" rel="noopener noreferrer">Abrir laboratório</a>

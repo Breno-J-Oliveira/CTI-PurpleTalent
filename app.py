@@ -3,7 +3,7 @@ from datetime import timedelta
 from pathlib import Path
 from functools import wraps
 from urllib.parse import urlsplit
-from flask import Flask, g, render_template, request, redirect, session, flash, abort
+from flask import Flask, g, render_template, request, redirect, session, flash, abort, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
 import orchestrator as orch
@@ -18,6 +18,7 @@ import occurrences
 import teams
 import remote_worker
 import remote_relay
+import remote_queue
 from catalog import seed_catalog
 from catalog_corporate import seed_corporate_catalog
 
@@ -76,12 +77,11 @@ def protect_request():
         if not remote_enabled:
             abort(503, description='Executor remoto indisponível.')
         remote_worker.authenticate()
-        if request.endpoint == 'remote_worker_poll':
-            remote_expire_instances()
         return
     if request.endpoint in ('remote_relay_create', 'remote_relay_view', 'remote_lab_page') and not remote_enabled:
         abort(404)
-    if production and request.endpoint in ('ambientes', 'encerrar_ambiente', 'encerrar_todos'):
+    if production and (request.endpoint in ('encerrar_ambiente', 'encerrar_todos')
+                       or (request.endpoint == 'ambientes' and not remote_enabled)):
         abort(503, description='O laboratório local não está disponível neste ambiente.')
     if session.get("user_id"):
         user = db().execute("SELECT id,name,role FROM users WHERE id=?", (session["user_id"],)).fetchone()
@@ -233,6 +233,7 @@ def init_db():
         answer_hash TEXT NOT NULL, start_job_id INTEGER NOT NULL REFERENCES remote_worker_jobs(id),
         stop_job_id INTEGER REFERENCES remote_worker_jobs(id),
         created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)""")
+    remote_queue.migrate(con)
     occurrences.migrate(con)
     seed_catalog(con)
     seed_corporate_catalog(con)
@@ -295,6 +296,10 @@ def index():
 def laboratory():
     d=db(); now=int(time.time()); uid=session.get('user_id')
     items=[dict(r) for r in d.execute("SELECT * FROM challenges WHERE image IS NOT NULL AND active=1 ORDER BY CASE WHEN image='cti-lab/incident-01' THEN 0 ELSE 1 END,id")]
+    if remote_enabled:
+        solved = {row[0] for row in d.execute('SELECT DISTINCT challenge_id FROM attempts WHERE user_id=? AND correct=1', (uid,))}
+        return render_template('laboratory.html', items=[item for item in items if item['image'] in remote_relay.PATHS],
+                               solved=solved, instances={}, remote_mode=True, reservation=remote_queue.current(d, uid))
     instances={};solved=set();own_instances=[]
     if uid:
         own_instances=d.execute('SELECT * FROM instances WHERE user_id=? AND active=1 AND expires_at>=? ORDER BY started_at',(uid,now)).fetchall()
@@ -515,12 +520,9 @@ def challenge(cid):
         flash("Flag correta!" if ok else "Flag incorreta. Tente de novo.")
         return redirect(f"/challenge/{cid}")
     if remote_enabled and c["image"]:
-        remote_instance = d.execute("""SELECT i.*,j.status AS start_status
-            FROM remote_challenge_instances i JOIN remote_worker_jobs j ON j.id=i.start_job_id
-            WHERE i.user_id=? AND i.challenge_id=? AND i.stop_job_id IS NULL AND i.expires_at>?
-            ORDER BY i.id DESC LIMIT 1""", (uid, cid, int(time.time()))).fetchone()
+        reservation = remote_queue.state(d, uid, cid, int(time.time()))
         focus_guard = session.get("role") == "participante" and not solved
-        return render_template("challenge.html", c=c, solved=solved, inst=None, remote_instance=remote_instance,
+        return render_template("challenge.html", c=c, solved=solved, inst=None, reservation=reservation,
                                remote_mode=True, now=int(time.time()), focus_guard=focus_guard,
                                focus_count=occurrences.count(d, uid, cid) if focus_guard else 0)
     inst = active_instance(d, uid, cid) if c["image"] else None
@@ -541,24 +543,6 @@ def challenge(cid):
     return render_template("challenge.html", c=c, solved=solved, inst=inst, now=int(time.time()),
                            focus_guard=focus_guard, focus_count=focus_count)
 
-def remote_expire_instances():
-    """Retire expired VMs via the worker; never reissue an uncertain start."""
-    d = db()
-    d.execute('BEGIN IMMEDIATE')
-    now = int(time.time())
-    d.execute("""UPDATE remote_worker_jobs SET status='failed', finished_at=?, flag=NULL
-        WHERE status='queued' AND id IN
-        (SELECT start_job_id FROM remote_challenge_instances WHERE expires_at<=?)""", (now, now))
-    rows = d.execute("""SELECT i.id,i.instance FROM remote_challenge_instances i
-        JOIN remote_worker_jobs j ON j.id=i.start_job_id
-        WHERE i.stop_job_id IS NULL AND i.expires_at<=?
-        AND j.status IN ('running','completed','interrupted')""", (now,)).fetchall()
-    for row in rows:
-        job = remote_worker.enqueue(d, request_key=secrets.token_urlsafe(24), action='stop', instance=row['instance'])
-        d.execute('UPDATE remote_challenge_instances SET stop_job_id=? WHERE id=?', (job, row['id']))
-    d.commit()
-
-
 def remote_start_env(cid):
     d, uid = db(), session['user_id']
     d.execute('BEGIN IMMEDIATE')
@@ -569,32 +553,11 @@ def remote_start_env(cid):
     if session.get('role') != 'participante' or teams.team_block(d, uid, challenge):
         d.rollback()
         abort(403)
-    existing = d.execute("""SELECT i.id FROM remote_challenge_instances i
-        JOIN remote_worker_jobs j ON j.id=i.start_job_id
-        WHERE i.user_id=? AND i.challenge_id=? AND i.stop_job_id IS NULL AND j.status IN ('queued','running','completed','interrupted')
-        LIMIT 1""", (uid, cid)).fetchone()
+    existing = remote_queue.current(d, uid)
     if existing:
         d.commit()
-        flash('Já existe uma solicitação para este desafio.')
-        return redirect(f'/challenge/{cid}')
-    count = d.execute("""SELECT COUNT(*) FROM remote_challenge_instances i
-        JOIN remote_worker_jobs j ON j.id=i.start_job_id
-        LEFT JOIN remote_worker_jobs stop ON stop.id=i.stop_job_id
-        WHERE j.status IN ('queued','running','completed','interrupted')
-        AND (i.stop_job_id IS NULL OR stop.status!='completed')""").fetchone()[0]
-    if count >= 1:
-        d.rollback()
-        flash('O laboratório está cheio ou aguardando reconciliação.')
-        return redirect(f'/challenge/{cid}')
-    per_user = d.execute("""SELECT COUNT(*) FROM remote_challenge_instances i
-        JOIN remote_worker_jobs j ON j.id=i.start_job_id
-        LEFT JOIN remote_worker_jobs stop ON stop.id=i.stop_job_id
-        WHERE i.user_id=? AND j.status IN ('queued','running','completed','interrupted')
-        AND (i.stop_job_id IS NULL OR stop.status!='completed')""", (uid,)).fetchone()[0]
-    if per_user >= MAX_PER_USER:
-        d.rollback()
-        flash('Você atingiu o limite de ambientes.')
-        return redirect(f'/challenge/{cid}')
+        flash('Você já tem uma reserva de laboratório.')
+        return redirect(url_for('challenge', cid=existing['challenge_id']))
     now = int(time.time())
     flag = 'CTF{' + secrets.token_hex(8) + '}'
     name = f'lab-u{uid}-c{cid}-{secrets.token_hex(6)}'
@@ -605,30 +568,32 @@ def remote_start_env(cid):
         (user_id,challenge_id,instance,answer_hash,start_job_id,created_at,expires_at)
         VALUES (?,?,?,?,?,?,?)""", (uid, cid, name, h(answer), job, now, now + TTL))
     d.commit()
-    flash('Solicitação enviada. Atualize a página para acompanhar.')
+    flash('Reserva registrada. Acompanhe sua posição na fila.')
     return redirect(f'/challenge/{cid}')
 
 
 def remote_stop_env(cid):
-    d, uid = db(), session['user_id']
+    d = db()
     d.execute('BEGIN IMMEDIATE')
-    row = d.execute("""SELECT i.id,i.instance,j.status,i.start_job_id FROM remote_challenge_instances i
-        JOIN remote_worker_jobs j ON j.id=i.start_job_id
-        WHERE i.user_id=? AND i.challenge_id=? AND i.stop_job_id IS NULL
-        ORDER BY i.id DESC LIMIT 1""", (uid, cid)).fetchone()
-    if row:
-        if row['status'] == 'queued':
-            now = int(time.time())
-            d.execute("UPDATE remote_worker_jobs SET status='failed', finished_at=?, flag=NULL WHERE id=?", (now, row['start_job_id']))
-            d.execute('UPDATE remote_challenge_instances SET expires_at=? WHERE id=?', (now, row['id']))
-        elif row['status'] in ('running', 'completed', 'interrupted'):
-            job = remote_worker.enqueue(d, request_key=secrets.token_urlsafe(24), action='stop', instance=row['instance'])
-            d.execute('UPDATE remote_challenge_instances SET stop_job_id=? WHERE id=?', (job, row['id']))
-        else:
-            d.execute('UPDATE remote_challenge_instances SET expires_at=? WHERE id=?', (int(time.time()), row['id']))
+    state = remote_queue.cancel(d, session['user_id'], cid, int(time.time()))
     d.commit()
-    flash('Solicitação de encerramento registrada.')
-    return redirect(f'/challenge/{cid}')
+    if state == 'cancelled':
+        flash('Você saiu da fila.')
+    elif state == 'stopping':
+        flash('Solicitação de encerramento registrada.')
+    return redirect(url_for('challenge', cid=cid))
+
+
+@app.get('/challenge/<int:cid>/lab-status')
+@login_required
+def remote_lab_status(cid):
+    if not remote_enabled:
+        abort(404)
+    challenge = db().execute("SELECT * FROM challenges WHERE id=? AND active=1", (cid,)).fetchone()
+    if not challenge or challenge['image'] not in remote_relay.PATHS:
+        abort(404)
+    reservation = remote_queue.state(db(), session['user_id'], cid, int(time.time()))
+    return render_template('remote_queue.html', c=challenge, reservation=reservation)
 
 
 @app.route("/challenge/<int:cid>/start", methods=["POST"])
@@ -706,6 +671,8 @@ def stop_env(cid):
 @app.route("/ambientes")
 @mentor_required
 def ambientes():
+    if remote_enabled:
+        return render_template('admin_lab_queue.html', rows=remote_queue.overview(db()), now=int(time.time()))
     reap_expired()
     rows = db().execute("""SELECT i.*, u.name uname, c.title FROM instances i
                            JOIN users u ON u.id=i.user_id JOIN challenges c ON c.id=i.challenge_id
@@ -887,10 +854,11 @@ def remote_lab_page(instance_id):
     item = remote_relay.allowed_instance(db(), instance_id, session['user_id'], int(time.time()))
     if not item:
         abort(404)
-    return render_template('remote_lab.html', instance_id=instance_id, challenge_id=item[3], sections=remote_relay.PATHS[item[2]])
+    return render_template('remote_lab.html', instance_id=instance_id, challenge_id=item[3],
+                           sections=remote_relay.PATHS[item[2]], expires_at=item[4], server_now=int(time.time()))
 
 
-remote_worker.register_routes(app, db)
+remote_worker.register_routes(app, db, select_job=remote_queue.next_job, on_result=remote_queue.on_result)
 remote_relay.register_routes(app, db, login_required)
 learning.register_routes(app, db, login_required)
 recruitment.register_routes(app, db, login_required, mentor_required)

@@ -35,7 +35,7 @@ def migrate(con):
 
 
 def allowed_instance(con, identifier, user_id, now):
-    return con.execute('''SELECT i.id,i.instance,c.image,c.id
+    return con.execute('''SELECT i.id,i.instance,c.image,c.id,i.expires_at
         FROM remote_challenge_instances i
         JOIN challenges c ON c.id=i.challenge_id
         JOIN remote_worker_jobs j ON j.id=i.start_job_id

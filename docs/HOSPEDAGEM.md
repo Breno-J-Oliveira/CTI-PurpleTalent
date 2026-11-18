@@ -106,3 +106,7 @@ O WSGI usa o servidor do PythonAnywhere. O script start_production.py pertence a
 Valide a implantação na conta autorizada, proxy, autenticação, CSRF, HTTPS, limites, isolamento das respostas, persistência após Reload e restauração de backup. Planeje a execução segura das VMs e substitua respostas fixas de CTF para uma seleção sigilosa. Não publique bancos, chaves ou gabaritos.
 
 Fontes: https://help.pythonanywhere.com/pages/FreeAccountsFeatures, https://help.pythonanywhere.com/pages/Flask e https://help.pythonanywhere.com/pages/DiskQuota.
+
+## Atualizar a fila de laboratórios
+
+Antes da atualização, aguarde o fim das sessões e faça uma cópia do SQLite. No Bash do PythonAnywhere, rode o git pull e a inicialização do passo 2 para aplicar os índices da fila. Depois use **Reload**. Na conta com a integração já ativa, mantenha as variáveis e a credencial do executor. Para o laboratório online, siga [a operação das VMs](PREPARACAO-VM-REMOTA.md).

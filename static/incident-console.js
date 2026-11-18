@@ -6,6 +6,13 @@ if (consolePanel) {
     const status = consolePanel.querySelector('[data-status]');
     const records = consolePanel.querySelector('[data-records]');
     const url = consolePanel.dataset.request;
+    const timer = consolePanel.querySelector('[data-lab-time]');
+    const deadline = performance.now() + Number(timer.dataset.remaining) * 1000;
+    const clock = setInterval(() => {
+        const minutes = Math.ceil(Math.max(0, deadline - performance.now()) / 60000);
+        timer.textContent = minutes ? 'Tempo restante: ' + minutes + ' min' : 'Prazo do laboratório encerrado.';
+        if (!minutes) clearInterval(clock);
+    }, 1000);
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
         button.disabled = true;

@@ -67,7 +67,7 @@ def authenticate():
         abort(401)
 
 
-def register_routes(app, db):
+def register_routes(app, db, select_job=None, on_result=None):
     """Register authenticated polling and acknowledgement endpoints.
 
     The application must exempt only these endpoints from browser CSRF after
@@ -86,7 +86,12 @@ def register_routes(app, db):
         # One executor operates one job at a time. Do not dispatch another job
         # while a previous lease is awaiting acknowledgement.
         running = con.execute("SELECT 1 FROM remote_worker_jobs WHERE status IN ('running','interrupted') LIMIT 1").fetchone()
-        row = None if running else con.execute("SELECT id,action,instance,scenario,flag FROM remote_worker_jobs WHERE status='queued' ORDER BY id LIMIT 1").fetchone()
+        row = None
+        if not running:
+            if select_job:
+                row = select_job(con, now)
+            else:
+                row = con.execute("SELECT id,action,instance,scenario,flag FROM remote_worker_jobs WHERE status='queued' ORDER BY id LIMIT 1").fetchone()
         job = None
         if row:
             lease = secrets.token_urlsafe(32)
@@ -113,6 +118,8 @@ def register_routes(app, db):
         now = int(time.time())
         if row[0] == 'running' and row[2] > now:
             con.execute('UPDATE remote_worker_jobs SET status=?,finished_at=?,flag=NULL WHERE id=?', (data['status'], now, data['id']))
+            if on_result:
+                on_result(con, data['id'], data['status'], now)
         elif row[0] != data['status']:
             con.rollback()
             abort(409)

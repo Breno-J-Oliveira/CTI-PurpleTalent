@@ -1,0 +1,36 @@
+{% set state = reservation.state %}
+{% if state == 'queued' %}
+<p role="status"><strong>Posição {{ reservation.position }} na fila.</strong> Seu tempo de prova começa quando a VM estiver pronta.</p>
+{% elif state == 'preparing' %}
+<p role="status">Sua VM está iniciando. Isso pode levar alguns minutos.</p>
+{% elif state == 'ready' %}
+<p role="status" class="ok">Ambiente pronto. Restam {{ ((reservation.expires_at - reservation.now) / 60)|round(0, 'ceil')|int }} min.</p>
+<a class="button secondary full" data-lab-link href="{{ url_for('remote_lab_page', instance_id=reservation.instance_id) }}">Abrir laboratório</a>
+{% elif state == 'stopping' %}
+<p role="status">Aguardando o executor desligar a VM.</p>
+{% elif state == 'stop_failed' %}
+<p role="status">O executor não confirmou o desligamento. Tente novamente ou avise a mentoria.</p>
+{% elif state == 'interrupted' %}
+<p role="status">O contato com o executor foi interrompido. Avise a mentoria para verificar a VM.</p>
+{% elif state == 'other' %}
+<p role="status">Você já tem uma reserva em outro desafio.</p>
+<a class="button secondary full" href="{{ url_for('challenge', cid=reservation.challenge_id) }}">Ver minha reserva</a>
+{% elif state == 'failed' %}
+<p role="status">O ambiente não iniciou ou a reserva expirou. Você pode entrar na fila novamente.</p>
+{% elif state == 'ended' %}
+<p role="status">Você não tem uma reserva ativa neste desafio.</p>
+{% else %}
+<p>Entre na fila para usar uma VM individual.</p>
+{% endif %}
+
+{% if session.role == 'participante' and state in ('queued', 'preparing', 'ready', 'stop_failed') %}
+<form method="post" action="{{ url_for('stop_env', cid=c.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="danger full">{{ 'Sair da fila' if state == 'queued' else 'Tentar encerrar novamente' if state == 'stop_failed' else 'Encerrar ambiente' }}</button>
+</form>
+{% elif session.role == 'participante' and state in ('empty', 'ended', 'failed') %}
+<form method="post" action="{{ url_for('start_env', cid=c.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="full">Entrar na fila</button>
+</form>
+{% endif %}
