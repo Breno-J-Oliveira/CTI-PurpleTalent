@@ -10,6 +10,7 @@ from unittest.mock import patch
 from flask import Flask, g, session, abort
 import remote_relay
 import remote_worker
+import teams
 from scripts import remote_relay as local_relay
 
 
@@ -21,11 +22,12 @@ class RelayTests(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
         with closing(sqlite3.connect(self.path)) as con, con:
-            con.execute('CREATE TABLE challenges(id INTEGER PRIMARY KEY,image TEXT,active INTEGER)')
+            con.execute('CREATE TABLE challenges(id INTEGER PRIMARY KEY,image TEXT,active INTEGER,side TEXT,requires_team INTEGER)')
             con.execute('CREATE TABLE remote_challenge_instances(id INTEGER PRIMARY KEY,user_id INTEGER,challenge_id INTEGER,instance TEXT,start_job_id INTEGER,stop_job_id INTEGER,expires_at INTEGER)')
             remote_worker.migrate(con)
             remote_relay.migrate(con)
-            con.execute("INSERT INTO challenges VALUES(1,'cti-lab/incident-01',1)")
+            teams.migrate(con)
+            con.execute("INSERT INTO challenges VALUES(1,'cti-lab/incident-01',1,'Blue Team',0)")
             con.execute("INSERT INTO remote_worker_jobs(id,request_key,action,instance,status,created_at) VALUES(1,'start_fixture_123','start','lab-u2-c1-aabbcc','completed',0)")
             con.execute("INSERT INTO remote_challenge_instances VALUES(1,2,1,'lab-u2-c1-aabbcc',1,NULL,?)", (int(time.time())+120,))
         self.app = Flask(__name__)
@@ -84,6 +86,18 @@ class RelayTests(unittest.TestCase):
         self.assertTrue(response.content_type.startswith('application/json'))
         with self.client.session_transaction() as s:
             s['user_id'] = 3
+        self.assertEqual(self.client.get(f'/remote-lab/1/request/{rid}').status_code, 404)
+
+    def test_team_requirement_applies_to_active_instance(self):
+        with closing(sqlite3.connect(self.path)) as con, con:
+            con.execute('UPDATE challenges SET requires_team=1')
+            con.execute("INSERT INTO team_members SELECT id,2,0 FROM teams WHERE name='Blue Team Alpha'")
+        response = self.create()
+        self.assertEqual(response.status_code, 202)
+        rid = response.get_json()['id']
+        with closing(sqlite3.connect(self.path)) as con, con:
+            con.execute('DELETE FROM team_members WHERE user_id=2')
+        self.assertEqual(self.create().status_code, 404)
         self.assertEqual(self.client.get(f'/remote-lab/1/request/{rid}').status_code, 404)
 
     def test_cancelled_and_expired_block_poll_or_result(self):
