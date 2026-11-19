@@ -1,5 +1,7 @@
 > Versão atual da equipe, com equipes iniciais e configuração de banco compartilhado. Consulte [hospedagem](docs/HOSPEDAGEM.md).
 
+Para levar a operação a outro computador Windows, siga o [guia de migração do servidor e das VMs](docs/MIGRAR-SERVIDOR-WINDOWS.md).
+
 Os laboratórios online **Intranet esquecida** e **Incidente em andamento** usam uma fila compartilhada no SQLite. Os candidatos veem a posição e o prazo no desafio. A mentoria acompanha a ordem e a situação em **Ambientes virtuais**. Consulte a [operação dos laboratórios](docs/PREPARACAO-VM-REMOTA.md) e a [hospedagem](docs/HOSPEDAGEM.md).
 
 # Purple Talent

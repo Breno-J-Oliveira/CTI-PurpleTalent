@@ -1,5 +1,7 @@
 # Hospedagem gratuita do Purple Talent
 
+Para trocar o computador que executa os laboratórios, mantenha o site e o banco na hospedagem e siga o [guia de migração no Windows](MIGRAR-SERVIDOR-WINDOWS.md).
+
 Use o plano gratuito do PythonAnywhere para uma demonstração. Ele oferece HTTPS e armazenamento persistente. Na consulta, o plano incluía 512 MiB, um processo web e validade de um mês. Confira as condições atuais.
 
 O SQLite atenderá candidatos e mentor pelo mesmo site. Os desafios que dependem de VirtualBox/Vagrant estão bloqueados em produção até haver infraestrutura compatível. Algumas respostas de CTF estão no código público. A empresa deve avaliar segurança e disponibilidade antes de receber dados reais.
