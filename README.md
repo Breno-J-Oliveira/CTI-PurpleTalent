@@ -1,99 +1,187 @@
-> Versão atual da equipe, com equipes iniciais e configuração de banco compartilhado. Consulte [hospedagem](docs/HOSPEDAGEM.md).
+# Purple Talent — Recrutamento e prática em cibersegurança
 
-Para levar a operação a outro computador Windows, siga o [guia de migração do servidor e das VMs](docs/MIGRAR-SERVIDOR-WINDOWS.md).
+<p align="center">
+  <img src="static/images/investigation-hero.webp" alt="Ilustração do Purple Talent com uma analista correlacionando evidências" width="640">
+</p>
 
-Os laboratórios online **Intranet esquecida** e **Incidente em andamento** usam uma fila compartilhada no SQLite. Os candidatos veem a posição e o prazo no desafio. A mentoria acompanha a ordem e a situação em **Ambientes virtuais**. Consulte a [operação dos laboratórios](docs/PREPARACAO-VM-REMOTA.md) e a [hospedagem](docs/HOSPEDAGEM.md).
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/Flask-3.1-181717?style=for-the-badge&logo=flask&logoColor=white" alt="Flask 3.1">
+  <img src="https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite">
+  <img src="https://img.shields.io/badge/QEMU-7C3AED?style=for-the-badge&logo=qemu&logoColor=white" alt="QEMU">
+</p>
 
-# Purple Talent
+<p align="center">
+  <a href="https://brenooliveira123.pythonanywhere.com/">Site publicado</a> ·
+  <a href="#executar-no-windows">Executar no Windows</a> ·
+  <a href="#documentação">Documentação</a>
+</p>
 
-Integração visual para 19/11: [entrega e verificação](docs/ENTREGA-POLIMENTO-19.md), [imagens e origem](docs/IMAGENS-APRESENTACAO.md). Para iniciar esta cópia sem ambiguidades: `./scripts/run_local.ps1`; para a demonstração separada sem máquinas virtuais: `./scripts/run_local.ps1 -Demo -Port 5057`. O launcher identifica pasta/versão/base e recusa portas ocupadas.
+---
 
-A evolução mais recente está em [23 melhorias de usabilidade](docs/EVOLUCAO-23-MELHORIAS.md), com verificações do editor, jornada do candidato e laboratórios.
+## O que é o Purple Talent?
 
-Plataforma local de desafios CTF, avaliação de participantes e oportunidades. Integra a base Python/Flask e SQLite entregue pela equipe ao novo visual fornecido nas imagens do Figma e nas referências HTML/CSS/JavaScript da equipe.
+O **Purple Talent** reúne desafios de cibersegurança, candidaturas e avaliação de competências. O participante pratica análise de evidências em desafios Capture The Flag (CTF). Ao se candidatar a uma vaga, responde a um questionário específico e pode realizar um estudo de caso que a mentoria revisa.
 
-Entrega para apresentação: consulte o [roteiro de demonstração](docs/APRESENTACAO.md), a [verificação atual](docs/ENTREGA-APRESENTACAO.md) e a [revisão de segurança](docs/SEGURANCA-FINAL.md). Os relatórios anteriores e o documento Word de testes registram suas respectivas etapas históricas.
+O projeto foi desenvolvido no **Projeto Saga SENAI**, na **Escola SENAI A. Jacob Lafer**, no contexto do programa de talentos da CTI Brasil. A proposta é dar aos participantes espaço para demonstrar como investigam problemas, justificam decisões e comunicam resultados.
+
+> **Prática para aprender. Evidências para conversar. Pessoas para decidir.**
+
+---
+
+## O que ele entrega?
+
+### Para candidatos
+
+- Busca de vagas por cargo, área de atuação e modalidade de trabalho.
+- Questionários por vaga com seleção única, múltipla seleção, texto curto, resposta discursiva, número e URL.
+- Rascunho, revisão antes do envio, acompanhamento de etapa, devolutiva e extrato da candidatura.
+- Desafios individuais nas trilhas Red Team, Blue Team, Aquecimento e Corporativo, além de atividades colaborativas quando a mentoria exige equipe.
+- Ranking, histórico de progresso e laboratórios individuais com fila e tempo de uso.
+
+### Para a mentoria
+
+- Criação, edição e publicação de vagas, com prazo, pausa, reabertura e encerramento.
+- Editor de perguntas por vaga, com gabarito opcional para escolha única e versões que preservam o formulário de cada inscrição.
+- Busca de candidaturas por vaga, etapa e situação da avaliação.
+- Dossiê com respostas, evidências, rubrica de competências, parecer privado e devolutiva compartilhável.
+- Gestão de conteúdo, desafios, equipes e fila de ambientes virtuais.
+
+---
+
+## Como funciona?
+
+1. **Candidatura.** A pessoa escolhe uma vaga, preenche o formulário e revisa as respostas antes de enviar. O sistema vincula a inscrição à versão do questionário utilizada.
+2. **Avaliação.** A candidatura pode incluir um cenário textual de SOC ou AppSec, com etapas de investigação, análise de evidências e parecer técnico.
+3. **Revisão.** A mentoria avalia o trabalho, registra a justificativa e decide a próxima etapa. Os pontos da arena permanecem separados da avaliação da candidatura.
+4. **Laboratório.** Na arena, a pessoa pode reservar a Intranet esquecida ou o Incidente em andamento. O executor inicia a VM pela ordem da fila. O período de 60 minutos começa quando ela está pronta.
+
+## Visão da plataforma
+
+<p align="center">
+  <img src="static/images/product-candidate.webp" alt="Tela de acompanhamento de uma candidatura fictícia" width="48%">
+  <img src="static/images/product-review.webp" alt="Tela da mentoria com dados fictícios de revisão" width="48%">
+</p>
+
+*Capturas da aplicação com dados fictícios.* [Origem das imagens](docs/IMAGENS-APRESENTACAO.md)
+
+---
+
+## Arquitetura
+
+```mermaid
+flowchart LR
+    P["Navegador"] -->|HTTPS| S["Flask no PythonAnywhere"]
+    S --> DB[("SQLite persistente")]
+    E["Executor Python no Windows"] -->|Consulta fila e envia resultados por HTTPS| S
+    E -->|Inicia e encerra| V["VM descartável QEMU"]
+    E -->|Consulta registros pelo loopback| V
+```
+
+O site publicado mantém o banco de candidatos e da fila na hospedagem. O executor Windows atende uma VM por vez e faz conexões de saída para consultar o site. Mudar o computador do executor preserva o endereço público e a base de recrutamento. [Guia de migração](docs/MIGRAR-SERVIDOR-WINDOWS.md)
+
+| Camada | Tecnologia |
+| --- | --- |
+| Interface | HTML, Jinja, CSS e JavaScript |
+| Aplicação | Python 3.12 e Flask 3.1 |
+| Persistência | SQLite |
+| Hospedagem do site | PythonAnywhere, via WSGI |
+| Laboratórios publicados | QEMU com convidado Ubuntu 24.04 e executor Python |
+| Verificação | unittest e roteiros de navegador com Playwright |
+
+### Rotas principais
+
+| Acesso | Rota | Finalidade |
+| --- | --- | --- |
+| Público | `/opportunities` | Consultar vagas abertas |
+| Participante | `/my-applications` | Retomar ou acompanhar candidaturas |
+| Participante | `/challenges` | Abrir desafios e entrar na fila de laboratório |
+| Participante | `/teams` | Criar equipe ou ingressar em uma equipe disponível |
+| Participante | `/ranking` | Consultar classificação da arena |
+| Mentoria | `/admin` | Gerir vagas e revisar candidaturas |
+| Mentoria | `/admin/challenges` | Criar e editar desafios |
+| Mentoria | `/ambientes` | Acompanhar a fila e as VMs |
+
+---
+
+## Proteções e operação
+
+| Área | Controle |
+| --- | --- |
+| Sessão e formulários | Cookies de sessão com HttpOnly e SameSite, atributo Secure em produção, proteção CSRF e limites de requisição |
+| Permissões | Rotas de mentoria restritas, controle de acesso por titularidade para candidaturas e laboratórios |
+| Questionários | Versões por inscrição, controle de edição simultânea e gabarito disponível à mentoria |
+| VMs | Execução descartável em QEMU, rede restrita, acesso mediado pelo executor e expiração da sessão |
+| Dados | Backup e restauração do SQLite para arquivos novos, com verificação de integridade |
+
+Use dados fictícios na demonstração. Antes de abrir uma seletiva com dados reais, valide HTTPS obrigatório, operação dos laboratórios, restauração de backup e regras de acesso no ambiente de uso. [Revisão de segurança](docs/SEGURANCA-FINAL.md)
+
+---
 
 ## Executar no Windows
 
-Requisitos: Python 3.12 ou superior. VirtualBox e Vagrant são necessários para a Intranet e o console final de investigação (veja [docs/VIRTUALBOX.md](docs/VIRTUALBOX.md)). Formulários, candidaturas e avaliações por dossiê funcionam sem eles. Na pasta do projeto:
+Pré-requisitos para a aplicação local: **Git, Python 3.12 e PowerShell**. O modo de demonstração da jornada de recrutamento dispensa Docker e máquinas virtuais.
 
 ```powershell
-python -m venv .venv
+git clone https://github.com/Breno-J-Oliveira/CTI-PurpleTalent.git
+Set-Location CTI-PurpleTalent
+py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe app.py
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_local.ps1 -Demo -Port 5057
 ```
 
-Abra **http://127.0.0.1:5000**. Cadastre sua conta de participante. O banco `lab.db` é preservado entre execuções; não o apague para atualizar a aplicação. A chave de sessão é gerada em `.session-key`, ou pode ser fornecida por `SECRET_KEY` no ambiente.
+Abra a [demonstração local](http://127.0.0.1:5057). A primeira execução cria uma base separada com vagas, respostas e avaliações fictícias. Execuções seguintes retomam a mesma base.
 
-O acesso demonstrativo de mentoria herdado da equipe é `mentor@cti.local` / `mentor123`, criado apenas quando o banco não tem usuários. Bancos existentes mantêm suas credenciais. Esse acesso é exclusivo para demonstração local; esta versão não deve ser publicada na internet.
+| Acesso da demo local | E-mail | Senha de demonstração |
+| --- | --- | --- |
+| Candidato | `candidato@demo.invalid` | `demonstracao123` |
+| Mentoria | `mentor@cti.local` | `mentor123` |
 
-## Preservar os dados
+A senha demonstrativa de mentoria vale apenas para uma base recém-criada sem `MENTOR_PASSWORD` personalizada. Consulte o [roteiro de apresentação](docs/APRESENTACAO.md) para percorrer a demonstração.
 
-Crie o diretório de destino fora do repositório e execute `.\.venv\Scripts\python.exe scripts/backup_database.py backup lab.db D:/backups/purple-talent.backup.db`. O destino precisa ser novo; o comando não substitui arquivos. Para ensaiar a restauração, use a operação `restore` com a cópia como origem e outro arquivo novo como destino. Guarde banco, cópias e chave de sessão em local protegido; não envie esses arquivos ao GitHub.
+Para executar a cópia local de trabalho, remova `-Demo` e use a porta padrão. O launcher permite selecionar outra base com `-Database`.
 
-## Fluxos disponíveis
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_local.ps1
+```
 
-- Cadastro, login, logout e edição de nome/equipe.
-- Arenas com busca e filtro, desafios de treino, dicas quando disponíveis e validação de respostas.
-- Desafios individuais em todas as trilhas. A mentoria pode exigir equipe da mesma trilha em desafios colaborativos Red Team ou Blue Team.
-- Intranet em máquina virtual individual com flag única, porta local, limite de instâncias e expiração de 60 minutos.
-- Investigação final em laboratório VirtualBox isolado: captura fictícia de servidor com registros de acesso, eventos e processos, sem dicas. Os dados mudam por instância; trata-se de treinamento, sem garantia antifraude para seleção real.
-- Ranking calculado a partir de desafios resolvidos, sem duplicar pontos por reenvio.
-- Painel de mentoria, avaliação de quatro competências e dossiê com histórico imprimível.
-- Vagas públicas em `/opportunities`; gestão pela mentoria em `/admin` e `/jobs`.
-- Editor em `/admin/jobs/new`: rascunho, edição, publicação, pausa/reabertura, encerramento definitivo, prazo e metadados. Prévia restrita e proteção de edição simultânea.
-- Formulário específico por vaga, configurado em editor visual; rascunho, revisão e confirmação da candidatura.
-- Confirmação vinculada às respostas exibidas; mudanças em outra aba exigem nova revisão. O candidato pode registrar desistência nas etapas elegíveis, sem apagar respostas ou histórico.
-- O editor de perguntas detecta alterações simultâneas e preserva os campos digitados quando há conflito.
-- Formulários persistidos em tabelas relacionais SQLite: versões, perguntas, opções e respostas; não são armazenados como documentos JSON.
-- Versões das perguntas preservadas desde a abertura do formulário, retorno à vaga após cadastro/login e proteção contra submissão duplicada.
-- Avaliação seletiva simulada em três etapas por candidatura, com evidências de investigação, correlação e resposta; variantes SOC e AppSec.
-- Revisão humana, acompanhamento de etapa e feedback; notas internas não são apresentadas ao candidato.
-- Rubrica interna por competência, justificativa e histórico de revisões por candidatura, sem alterar os pontos de treino.
-- Busca, filtros por vaga/etapa e paginação das candidaturas da equipe, mantendo rascunhos privados.
+Para preparar o executor QEMU, siga o [guia de migração do servidor](docs/MIGRAR-SERVIDOR-WINDOWS.md). Para publicar o site, siga o [guia do PythonAnywhere](docs/HOSPEDAGEM.md).
 
-O indicador legado de compatibilidade de uma vaga compara a pontuação conquistada com a pontuação mínima informada. É um indicador simples, não uma decisão automática de contratação ou uma certificação de competência.
-
-O painel **Minha evolução** apresenta progresso por área, atividade recente e relatos de solução, consultáveis pela mentoria. O contexto completo para continuidade está em [claude.md](claude.md).
-
-## Arquitetura atual
-
-O navegador utiliza HTML/Jinja, CSS e JavaScript locais. Flask processa os formulários e acessa SQLite. O orquestrador usa o VBoxManage no host para criar clones vinculados de uma VM base. As VMs não recebem o banco nem pastas compartilhadas do host. Não foram acrescentados frameworks, bancos ou serviços à base da equipe.
-
-As fontes Plus Jakarta Sans, Inter e JetBrains Mono são servidas localmente, com suas licenças. As referências da Rafaela permanecem preservadas.
-
-## Verificar
+## Testes
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-$env:RUN_VBOX_TESTS = '1'
-.\.venv\Scripts\python.exe -m unittest discover -s tests -p test_orchestrator.py -v
-Remove-Item Env:RUN_VBOX_TESTS
 ```
 
-Os testes da aplicação usam bancos temporários e mocks do VBoxManage. O teste real é separado e exige a VM base criada. O teste opcional de navegador está em `tests/browser.cjs`; usa Playwright apenas como ferramenta de QA, fora das dependências do produto. Seu servidor isolado é iniciado com `.\.venv\Scripts\python.exe tests/serve_browser.py`, na porta 5055, e grava evidências em `output/qa`.
+A suíte usa bancos temporários para verificar as regras da aplicação. A validação de boot real usa o runtime e os cenários descritos no [guia de laboratórios remotos](docs/PREPARACAO-VM-REMOTA.md).
 
-## Operação e limites
+---
 
-O servidor Flask está vinculado ao loopback e com debug desligado. O processo da aplicação deve permanecer aberto para remover ambientes expirados; se fechado, a limpeza volta na próxima execução. Não é um serviço de produção nem um ambiente multiusuário remoto. Cada VM usa NAT própria, o que impede comunicação entre instâncias,, mas não constitui sandbox de execução de código arbitrário.
+## Documentação
 
-### Conferir o fluxo novo sem máquinas virtuais
+| Documento | Conteúdo |
+| --- | --- |
+| [Documentação da equipe](docs/documentacao-equipe/README.md) | Objetivo, requisitos, protótipo e referências do Projeto Saga |
+| [Roteiro de apresentação](docs/APRESENTACAO.md) | Demonstração da jornada do candidato e da mentoria |
+| [Gestão de vagas](docs/ENTREGA-GESTAO-VAGAS.md) | Publicação, prazo, pausa e encerramento |
+| [Recrutamento e avaliação](docs/ENTREGA-RECRUTAMENTO.md) | Formulários, candidaturas e avaliação por etapas |
+| [Rubrica de avaliação](docs/ENTREGA-RUBRICA.md) | Competências e histórico do parecer |
+| [Hospedagem](docs/HOSPEDAGEM.md) | Configuração do site e persistência do banco |
+| [Troca do computador servidor](docs/MIGRAR-SERVIDOR-WINDOWS.md) | Instalação do executor, cópia do runtime e retorno ao computador anterior |
+| [Laboratórios remotos](docs/PREPARACAO-VM-REMOTA.md) | QEMU, fila, desligamento e diagnóstico |
+| [Plano de testes de software](docs/Plano%20de%20Testes%20de%20Software%20%26%20GOT.docx) | Matriz de cenários e registros de verificação |
+| [Histórico de mudanças](docs/mudanca.md) | Alterações e integrações do projeto |
 
-```powershell
-.\.venv\Scripts\python.exe tests/serve_recruitment.py
-```
+## Equipe
 
-Abra **http://127.0.0.1:5056**. Esse servidor de demonstração cria duas vagas identificadas como DEMO QA em banco separado, `output/qa/recruitment-browser.db`; não utiliza o banco da equipe. Cadastre uma conta sintética para experimentar. O acesso de mentoria usa a credencial local demonstrativa descrita acima. Nenhum e-mail é enviado.
+Projeto desenvolvido na **Escola SENAI A. Jacob Lafer**.
 
-As avaliações seletivas são cenários textuais com revisão humana; não provisionam novos alvos virtuais nem executam comandos. Pontuação de treino não é reaproveitada como nota da seleção. Nesta entrega, a mentoria continua responsável pelo recrutamento interno; perfis separados de administrador/recrutador e isolamento multiempresa ainda não foram implementados.
-
-Para criar a VM base dos laboratórios: `powershell -ExecutionPolicy Bypass -File scripts\setup_virtualbox.ps1`.
-
-Detalhes de preparação e diagnóstico estão em [docs/VIRTUALBOX.md](docs/VIRTUALBOX.md). O histórico desta integração está em [docs/mudanca.md](docs/mudanca.md), e a matriz de resultados em [Plano de Testes de Software & GOT.docx](<docs/Plano de Testes de Software & GOT.docx>).
-
-Não publique `lab.db`, `.session-key`, `.env`, dados de usuários ou evidências privadas. O repositório público contém somente código, documentação e recursos visuais; dados locais e segredos ficam ignorados.
-
-Detalhes desta etapa e verificações: [Entrega de recrutamento](docs/ENTREGA-RECRUTAMENTO.md).
-
-A gestão completa de vagas está documentada em [Entrega da gestão de vagas](docs/ENTREGA-GESTAO-VAGAS.md). Pausa e prazo bloqueiam novos envios sem apagar candidaturas; encerramento é definitivo. A avaliação de uma inscrição já enviada continua disponível após o encerramento da vaga.
+| Integrante | Responsabilidade |
+| --- | --- |
+| Ana Carolina | Desenvolvimento |
+| Breno José | Desenvolvimento |
+| João Pedro Tomazini | Desenvolvimento |
+| Leonardo Alves | Desenvolvimento |
+| Nicolas Tukaze | Desenvolvimento |
+| Paolla Veronêz | Product Owner |
+| Rafaela Oliveira | Scrum Master |
