@@ -155,6 +155,8 @@ Para preparar o executor QEMU, siga o [guia de migração do servidor](docs/MIGR
 
 A suíte usa bancos temporários para verificar as regras da aplicação. A validação de boot real usa o runtime e os cenários descritos no [guia de laboratórios remotos](docs/PREPARACAO-VM-REMOTA.md).
 
+A [verificação de responsividade](docs/RESPONSIVIDADE.md) cobre páginas públicas, candidato e mentoria em seis larguras, temas claro/escuro e menus na horizontal, com uma base fictícia separada.
+
 ---
 
 ## Documentação
