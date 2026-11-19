@@ -80,8 +80,10 @@
   // Ao voltar pelo histórico (cache de páginas), o modo de foco volta a valer.
   window.addEventListener("pageshow", event => { if (event.persisted) { allowLeave = false; labPause = false; } });
 
-  // Formulários desta página (enviar flag, iniciar/encerrar ambiente) recarregam a tela de propósito.
-  document.querySelectorAll("main form").forEach(form => form.addEventListener("submit", () => { allowLeave = true; }));
+  // A fila pode substituir o formulário de encerramento enquanto a página está aberta.
+  document.addEventListener("submit", event => {
+    if (event.target.matches("main form")) allowLeave = true;
+  });
   // O laboratório abre em outra aba por necessidade do desafio.
   document.querySelectorAll("[data-lab-link]").forEach(link => link.addEventListener("click", () => { labPause = true; }));
 
